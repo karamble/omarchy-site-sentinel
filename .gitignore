@@ -1,0 +1,19 @@
+# Built helpers. Source only ships; the binary is compiled on the user's
+# machine and must never be committed.
+bin/
+*.exe
+
+# Go test and coverage output.
+*.test
+*.out
+coverage.*
+
+# Local configuration and state, if a run is pointed at the repo.
+sites.json
+state.json
+triggers.json
+
+# Editor and OS noise.
+*.swp
+*~
+.DS_Store

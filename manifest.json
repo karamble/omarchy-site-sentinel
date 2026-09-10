@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "karamble.sitesentinel",
+  "name": "Site Sentinel",
+  "version": "0.1.0",
+  "author": "karamble",
+  "license": "ISC",
+  "description": "Watches sites from this machine: whether each answers, the certificate it serves, where it resolves and when its domain renews",
+  "repository": "https://github.com/karamble/omarchy-site-sentinel",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Site Sentinel",
+    "description": "Uptime, TLS certificates, hosting and domain renewals",
+    "category": "Development",
+    "aliases": [
+      "sites",
+      "site",
+      "uptime",
+      "ssl",
+      "tls",
+      "cert",
+      "domain",
+      "monitor"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "addr": "127.0.0.1:8098",
+      "refreshSec": 60,
+      "certWarnsBar": true
+    },
+    "schema": [
+      {
+        "key": "addr",
+        "type": "string",
+        "label": "Daemon address",
+        "description": "Where the sentinel daemon is listening. Loopback by design.",
+        "defaultValue": "127.0.0.1:8098"
+      },
+      {
+        "key": "refreshSec",
+        "type": "integer",
+        "label": "Panel refresh (seconds)",
+        "description": "How often the panel re-reads the daemon. The daemon does its own checking; this only controls the view.",
+        "min": 5,
+        "max": 3600,
+        "step": 5,
+        "defaultValue": 60
+      },
+      {
+        "key": "certWarnsBar",
+        "type": "boolean",
+        "label": "Expiring certificates can light the bar",
+        "description": "Off means only a site that is down colours the icon.",
+        "defaultValue": true
+      }
+    ]
+  }
+}
