@@ -80,21 +80,20 @@ for standing. Arm one from the panel, the command line or MCP:
 the condition, the time and your reason, and no values, so it stays true
 whenever it arrives.
 
-## For coding agents
+## MCP endpoint
 
-Site Sentinel installs nothing into any agent's configuration. It prints its
-guide when asked:
-
-    sentinel skill              the guide
-    sentinel skill -recipes     worked examples, one per operator
-
-It can also serve MCP on loopback behind a bearer token. **That endpoint is off
-until you switch it on**, in Settings or with `sentinel mcp-endpoint on`.
+Site Sentinel can serve MCP on loopback behind a bearer token, so an agent you
+already use can read what it has observed. **That endpoint is off until you
+switch it on**, in Settings or with `sentinel mcp-endpoint on`.
 
 `sentinel mcp` prints the entry to paste into an agent's config, and
 `sentinel recycle` mints a new token and shows the updated entry once, locking
 out everything holding the old one. Eight tools read; six change the sentinel's
 own site list and watches. None acts on a monitored site.
+
+Site Sentinel installs nothing into any agent's configuration and ships no
+instructions for one. The tool schemas describe what each tool does; that is the
+whole of it.
 
 ## Where it writes
 

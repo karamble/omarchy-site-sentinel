@@ -49,11 +49,9 @@ setup:
   mcp                 print the MCP entry to paste into an agent's config
   recycle             mint a new API token, locking out old clients
   purge               delete the configuration directory and everything in it
-  skill               print the guide for a coding agent
   version             print the version
 
 Run "sentinel <command> -h" for the flags of one command.
-Agents: start with "sentinel skill".
 `
 
 func main() {
@@ -111,8 +109,6 @@ func main() {
 		err = runRecycle(args)
 	case "purge":
 		err = runPurge(args)
-	case "skill":
-		err = runSkill(args)
 	case "version", "-version", "--version":
 		fmt.Printf("%s (%s)\n", version, commit)
 	case "help", "-h", "--help":

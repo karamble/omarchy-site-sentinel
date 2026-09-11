@@ -223,6 +223,17 @@ func runRecycle(args []string) error {
 	if err := cl.Do(ctx, "POST", "/api/token/recycle", nil, &out); err != nil {
 		return err
 	}
+	if c.json {
+		return client.PrintJSON(struct {
+			APIToken string `json:"apiToken"`
+			URL      string `json:"url"`
+			Header   string `json:"authorization"`
+		}{
+			APIToken: out.Token,
+			URL:      "http://" + c.addr + "/mcp",
+			Header:   "Bearer " + out.Token,
+		})
+	}
 	fmt.Println("A new API token is in place. Every client holding the old one is locked out now.")
 	fmt.Println()
 	fmt.Printf(`Paste this into the "mcpServers" object of your agent's config:

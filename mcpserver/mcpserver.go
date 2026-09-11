@@ -291,8 +291,8 @@ func register(s *mcp.Server, src Source) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "sentinel_add_site",
-		Description: "Watch a new site. Read sentinel_sites first and do not add one that is " +
-			"already there. This changes the sentinel's own list and touches nothing on the site itself.",
+		Description: "Watch a new site. A URL already in the list is rejected as a duplicate. " +
+			"This changes the sentinel's own list and touches nothing on the site itself.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in addIn) (*mcp.CallToolResult, siteOut, error) {
 		if src.Mutate == nil {
 			return nil, siteOut{Status: src.status(), Error: "this daemon cannot change its site list"}, nil

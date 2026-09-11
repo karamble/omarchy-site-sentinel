@@ -4,24 +4,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/karamble/omarchy-site-sentinel/docs"
 	"github.com/karamble/omarchy-site-sentinel/sites"
 )
-
-// runSkill prints the agent guide. It installs nothing and writes no file.
-func runSkill(args []string) error {
-	fs := flag.NewFlagSet("skill", flag.ExitOnError)
-	wantRecipes := fs.Bool("recipes", false, "print the worked examples instead")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if *wantRecipes {
-		fmt.Print(docs.Recipes)
-		return nil
-	}
-	fmt.Print(docs.Guide)
-	return nil
-}
 
 // runMCP prints the entry to paste into an agent's MCP configuration.
 func runMCP(args []string) error {

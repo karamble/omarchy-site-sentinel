@@ -200,8 +200,8 @@ func registerAlerts(s *mcp.Server, src Source) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "sentinel_disarm",
-		Description: "Remove an armed watch. Disarm a standing watch once it has done its " +
-			"job. Never disarm one whose armedBy is not you: say who owns it instead.",
+		Description: "Remove an armed watch. Each watch records an armedBy owner, which is " +
+			"reported so a caller can see who armed it.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in disarmIn) (*mcp.CallToolResult, disarmOut, error) {
 		engine, ok := src.alerts()
 		if !ok {
