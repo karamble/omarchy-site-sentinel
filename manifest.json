@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "karamble.sitesentinel",
   "name": "Site Sentinel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "karamble",
   "license": "ISC",
   "description": "Watches sites from this machine: whether each answers, the certificate it serves, where it resolves and when its domain renews",

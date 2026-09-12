@@ -41,7 +41,7 @@ panel offers a **Build now** button, or from the plugin directory:
     cd ~/.config/omarchy/plugins/karamble.sitesentinel
     make
 
-Requires the Go toolchain, 1.27 or newer. One direct dependency, the upstream
+Requires the Go toolchain, 1.25 or newer. One direct dependency, the upstream
 MCP SDK; every check itself is standard library.
 
 ### What the build guarantees

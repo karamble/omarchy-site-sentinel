@@ -1,6 +1,6 @@
 module github.com/karamble/omarchy-site-sentinel
 
-go 1.27.1
+go 1.25.0
 
 require github.com/modelcontextprotocol/go-sdk v1.7.0
 

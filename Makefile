@@ -1,7 +1,7 @@
 # Site Sentinel ships source only: bin/ is not committed, so the plugin is built
 # once after install. Requires the Go toolchain.
 
-VERSION ?= 0.1.0
+VERSION ?= 0.1.1
 LDFLAGS := -X main.version=$(VERSION)
 
 # Tools are named through variables so a packager can point them elsewhere.
