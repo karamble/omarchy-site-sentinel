@@ -82,7 +82,15 @@ func runDaemon(args []string) error {
 	logger.Info("sentinel daemon listening",
 		"addr", ln.Addr().String(), "version", version, "sites", len(store.Sites), "config", dir)
 
-	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	// Deadlines on every phase, not just the header: a local client holding a
+	// connection open, or trickling a body, must not pin the daemon.
+	httpSrv := &http.Server{
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	go mon.Run(ctx)
 	go engine.Run(ctx)

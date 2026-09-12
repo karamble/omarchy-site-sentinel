@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -266,8 +267,7 @@ type siteInput struct {
 
 func (s *Server) handleAddSite(w http.ResponseWriter, r *http.Request) {
 	var in siteInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &in) {
 		return
 	}
 	site := sites.Site{
@@ -294,8 +294,7 @@ func (s *Server) handleAddSite(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleEditSite(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var in siteInput
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &in) {
 		return
 	}
 	var out sites.Site
@@ -372,8 +371,7 @@ func (s *Server) handleArm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var t alerts.Trigger
-	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &t) {
 		return
 	}
 	armed, err := e.Arm(t)
@@ -393,8 +391,7 @@ func (s *Server) handleEditAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var patch alerts.Trigger
-	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &patch) {
 		return
 	}
 	out, err := e.Edit(r.PathValue("id"), func(t *alerts.Trigger) {
@@ -471,8 +468,7 @@ func (s *Server) handleMonitoring(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &in) {
 		return
 	}
 	if err := s.mutate(func(st *sites.Store) error {
@@ -490,8 +486,7 @@ func (s *Server) handleMCPToggle(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &in) {
 		return
 	}
 	if err := s.mutate(func(st *sites.Store) error {
@@ -517,8 +512,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		CertUrgentDays *int `json:"certUrgentDays"`
 		DomainWarnDays *int `json:"domainWarnDays"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if !s.decode(w, r, &in) {
 		return
 	}
 	if err := s.mutate(func(st *sites.Store) error {
@@ -584,6 +578,32 @@ func (s *Server) withRequestLog(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 		s.logger.Debug("request", "method", r.Method, "path", r.URL.Path, "dur", time.Since(start))
 	})
+}
+
+// maxBody caps a request body. Every request this API accepts is a handful of
+// fields, so the cap sits far above real use and far below anything that could
+// exhaust memory.
+const maxBody = 64 << 10
+
+// decode reads a JSON body under a hard size cap, reporting the error itself.
+//
+// MaxBytesReader stops the read at the cap rather than after it, so a client
+// holding the connection open cannot make the daemon buffer without bound. An
+// oversized body answers 413, since the request was well formed and merely too
+// large; anything else is a 400.
+func (s *Server) decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSON(w, s.logger, http.StatusRequestEntityTooLarge,
+				map[string]string{"error": "request body too large"})
+			return false
+		}
+		writeJSON(w, s.logger, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, logger *slog.Logger, status int, body any) {
