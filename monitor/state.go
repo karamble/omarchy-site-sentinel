@@ -3,7 +3,6 @@ package monitor
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/karamble/omarchy-site-sentinel/check"
+	"github.com/karamble/omarchy-site-sentinel/store"
 )
 
 // Severity is how loudly a site is asking for attention.
@@ -349,33 +349,12 @@ func (m *Monitor) save() {
 		m.logger.Warn("encoding state", "err", err)
 		return
 	}
-	dir := filepath.Dir(m.statePath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		m.logger.Warn("creating state directory", "dir", dir, "err", err)
-		return
-	}
-	tmp, err := os.CreateTemp(dir, ".state-*.json")
+	dir, err := store.Shared(filepath.Dir(m.statePath))
 	if err != nil {
-		m.logger.Warn("creating temp state file", "err", err)
+		m.logger.Warn("opening state directory", "err", err)
 		return
 	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		m.logger.Warn("chmod state file", "err", err)
-		return
-	}
-	if _, err := tmp.Write(append(raw, '\n')); err != nil {
-		tmp.Close()
-		m.logger.Warn("writing state", "err", err)
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		m.logger.Warn("closing state", "err", err)
-		return
-	}
-	if err := os.Rename(name, m.statePath); err != nil {
+	if err := dir.Write(filepath.Base(m.statePath), append(raw, '\n'), 0o600); err != nil {
 		m.logger.Warn("replacing state", "err", err)
 	}
 }
@@ -385,7 +364,11 @@ func (m *Monitor) load() {
 	if m.statePath == "" {
 		return
 	}
-	raw, err := os.ReadFile(m.statePath)
+	dir, err := store.Shared(filepath.Dir(m.statePath))
+	if err != nil {
+		return
+	}
+	raw, err := dir.Read(filepath.Base(m.statePath), 0o600)
 	if err != nil {
 		return // no state yet is the normal first run
 	}

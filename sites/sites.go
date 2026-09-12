@@ -15,6 +15,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/karamble/omarchy-site-sentinel/store"
 )
 
 // ErrNotConfigured reports that no store exists yet.
@@ -290,17 +292,14 @@ func Load(path string) (*Store, error) {
 	if path == "" {
 		path = DefaultPath()
 	}
-	info, err := os.Stat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, ErrNotConfigured
-	}
+	dir, err := store.Shared(filepath.Dir(path))
 	if err != nil {
 		return nil, err
 	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		return nil, fmt.Errorf("%s is mode %04o, want 0600: it holds the api token", path, perm)
+	raw, err := dir.Read(filepath.Base(path), 0o600)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrNotConfigured
 	}
-	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -328,38 +327,17 @@ func (s *Store) Save() error {
 		s.APIToken = tok
 	}
 
-	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating %s: %w", dir, err)
-	}
 	raw, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encoding store: %w", err)
 	}
 	raw = append(raw, '\n')
 
-	tmp, err := os.CreateTemp(dir, ".sites-*.json")
+	dir, err := store.Shared(filepath.Dir(s.path))
 	if err != nil {
-		return fmt.Errorf("creating temp file in %s: %w", dir, err)
+		return err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return fmt.Errorf("chmod %s: %w", tmpName, err)
-	}
-	if _, err := tmp.Write(raw); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing %s: %w", tmpName, err)
-	}
-	if err := os.Rename(tmpName, s.path); err != nil {
-		return fmt.Errorf("replacing %s: %w", s.path, err)
-	}
-	return nil
+	return dir.Write(filepath.Base(s.path), raw, 0o600)
 }
 
 // SetPath points the store at a file other than the default, for tests.

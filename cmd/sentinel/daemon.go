@@ -18,6 +18,7 @@ import (
 	"github.com/karamble/omarchy-site-sentinel/api"
 	"github.com/karamble/omarchy-site-sentinel/monitor"
 	"github.com/karamble/omarchy-site-sentinel/sites"
+	filestore "github.com/karamble/omarchy-site-sentinel/store"
 )
 
 func runDaemon(args []string) error {
@@ -57,6 +58,16 @@ func runDaemon(args []string) error {
 	defer stop()
 
 	dir := filepath.Dir(path)
+
+	// Clear temporary files left by a write that was interrupted, including the
+	// names the previous CreateTemp-based writers used. Without this they
+	// accumulate: five were sitting here before the store package landed.
+	if d, err := filestore.Shared(dir); err == nil {
+		if n, err := d.Sweep(".state-", ".sites-", ".triggers-"); err == nil && n > 0 {
+			logger.Info("swept interrupted writes", "files", n, "dir", dir)
+		}
+	}
+
 	srv := api.NewServer(store, nil, logger, version)
 	mon := monitor.New(srv.Store, filepath.Join(dir, "state.json"), logger)
 	srv.SetMonitor(mon)
