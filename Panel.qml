@@ -171,6 +171,14 @@ Panel {
     return root.toneOk
   }
 
+  // A closed environment for every child: a PATH for the two absolute tools
+  // that need none, a HOME so the helper finds its configuration, and nothing
+  // else. Proxy settings and trust roots stay out.
+  readonly property var childEnv: ({
+    "PATH": "/usr/bin:/bin",
+    "HOME": Quickshell.env("HOME") || ""
+  })
+
   readonly property string pluginDir: Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "").replace(/\/$/, "")
   readonly property string helperPath: pluginDir + "/bin/sentinel"
 
@@ -274,6 +282,52 @@ Panel {
   }
 
 
+  // A helper that never exits would hold a StdioCollector filling without
+  // bound, so every child gets a budget. Killing the leader is not enough: a
+  // helper that spawned anything of its own would leave it behind, so the
+  // whole group goes.
+  readonly property int childBudgetMs: 20000
+
+  Process { id: reaper; clearEnvironment: true; environment: root.childEnv }
+
+  // Both the process and its group: setting running to false stops the child
+  // itself, and the negative id reaches anything it spawned, when it leads a
+  // group. A target that has already gone makes kill fail harmlessly.
+  function reap(pid, name) {
+    if (!pid || pid <= 0) return
+    root.lastError = name + " exceeded its budget and was stopped"
+    reaper.command = ["/usr/bin/kill", "-TERM", "--", String(pid), "-" + pid]
+    reaper.running = true
+  }
+
+  Timer {
+    id: watchdog
+    interval: 1000
+    repeat: true
+    running: true
+    property var budgets: ({})
+    onTriggered: {
+      var procs = [
+        { p: helperProbe, n: "the helper probe" },
+        { p: staleProbe, n: "the staleness probe" },
+        { p: fetchProc, n: "the status read" },
+        { p: controlProc, n: "the command" },
+        { p: alertsProc, n: "the alerts read" },
+        { p: catalogueProc, n: "the catalogue read" }
+      ]
+      for (var i = 0; i < procs.length; i++) {
+        var e = procs[i]
+        if (!e.p.running) { watchdog.budgets[e.n] = 0; continue }
+        watchdog.budgets[e.n] = (watchdog.budgets[e.n] || 0) + watchdog.interval
+        if (watchdog.budgets[e.n] >= root.childBudgetMs) {
+          root.reap(e.p.processId, e.n)
+          e.p.running = false
+          watchdog.budgets[e.n] = 0
+        }
+      }
+    }
+  }
+
   Component.onCompleted: refresh()
   onOpenedChanged: if (opened) refresh()
 
@@ -288,6 +342,8 @@ Panel {
   // evidence: a re-clone deletes bin/ while the daemon carries on.
   Process {
     id: helperProbe
+    clearEnvironment: true
+    environment: root.childEnv
     command: ["/usr/bin/test", "-x", root.helperPath]
     onExited: function (code, status) {
       root.helperMissing = code !== 0
@@ -301,6 +357,8 @@ Panel {
   // while the helper is missing, since there is nothing to be newer than.
   Process {
     id: staleProbe
+    clearEnvironment: true
+    environment: root.childEnv
     running: false
     command: ["/usr/bin/find", root.pluginDir, "-name", "*.go",
               "-newer", root.helperPath, "-print", "-quit"]
@@ -311,6 +369,8 @@ Panel {
 
   Process {
     id: fetchProc
+    clearEnvironment: true
+    environment: root.childEnv
     command: [root.helperPath, "status", "-json", "-addr", root.addr]
 
     onExited: function (code, status) {
@@ -343,6 +403,8 @@ Panel {
 
   Process {
     id: controlProc
+    clearEnvironment: true
+    environment: root.childEnv
     property var args: []
     command: [root.helperPath].concat(controlProc.args).concat(["-addr", root.addr])
     onExited: root.refresh()
@@ -358,6 +420,8 @@ Panel {
 
   Process {
     id: alertsProc
+    clearEnvironment: true
+    environment: root.childEnv
     command: [root.helperPath, "alerts", "-addr", root.addr]
     stdout: StdioCollector {
       waitForEnd: true
@@ -372,6 +436,8 @@ Panel {
 
   Process {
     id: catalogueProc
+    clearEnvironment: true
+    environment: root.childEnv
     command: [root.helperPath, "catalogue", "-addr", root.addr]
     stdout: StdioCollector {
       waitForEnd: true

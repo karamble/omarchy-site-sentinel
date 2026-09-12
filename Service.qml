@@ -29,11 +29,31 @@ Item {
     return Math.min(30000, 1000 * Math.pow(2, root.restarts))
   }
 
+  // Passed to every child. Built once so the two processes cannot drift.
+  //
+  // Deliberately short. PATH reaches notify-send and herdr, both in /usr/bin.
+  // HOME finds the configuration. The session bus is what notify-send needs to
+  // reach the notification daemon, and without it every alert would be
+  // delivered into nothing. Proxy settings and trust roots are not here on
+  // purpose: the daemon talks to sites the user named and nowhere else.
+  readonly property var childEnv: ({
+    "PATH": "/usr/bin:/bin",
+    "HOME": Quickshell.env("HOME") || "",
+    "XDG_RUNTIME_DIR": Quickshell.env("XDG_RUNTIME_DIR") || "",
+    "DBUS_SESSION_BUS_ADDRESS": Quickshell.env("DBUS_SESSION_BUS_ADDRESS") || ""
+  })
+
   // bin/ is not shipped, so a fresh clone has nothing to run.
   Process {
     id: probe
-    command: ["test", "-x", root.helperPath]
+    command: ["/usr/bin/test", "-x", root.helperPath]
     running: true
+    // A closed environment: the helper needs a PATH for nothing, a HOME to find
+    // its configuration, and the runtime directory for desktop notifications.
+    // Everything else, proxy settings and trust roots included, stays out.
+    clearEnvironment: true
+    environment: root.childEnv
+
     onExited: function (code, status) {
       if (code === 0) {
         root.lastError = ""
@@ -57,6 +77,12 @@ Item {
   Process {
     id: daemon
     command: [root.helperPath, "daemon"]
+
+    // A closed environment: the helper needs a PATH for nothing, a HOME to find
+    // its configuration, and the runtime directory for desktop notifications.
+    // Everything else, proxy settings and trust roots included, stays out.
+    clearEnvironment: true
+    environment: root.childEnv
 
     onExited: function (code, status) {
       // A clean exit means it was told to stop.
