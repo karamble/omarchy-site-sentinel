@@ -44,6 +44,23 @@ panel offers a **Build now** button, or from the plugin directory:
 Requires the Go toolchain, 1.27 or newer. One direct dependency, the upstream
 MCP SDK; every check itself is standard library.
 
+### What the build guarantees
+
+`make` runs in your shell, with your PATH, because that is what building from
+source means. Within that, the build is pinned rather than open-ended:
+
+- `GOTOOLCHAIN=local` means the go command uses the toolchain you installed. It
+  will not silently fetch a different one over the network.
+- `-mod=readonly` refuses to edit `go.mod` or `go.sum` mid-build, and
+  `make verify` runs `go mod verify` before anything compiles, so every module
+  matches the checksum committed here and cross-checked against the public
+  checksum database.
+- `-trimpath` keeps local paths out of the binary, so the same inputs produce
+  the same bytes. Two builds of the same commit are byte-identical.
+
+Dependencies are not vendored. The bytes would be the same either way, and
+`go.sum` is what verifies them.
+
 Then add something to watch:
 
     ./bin/sentinel add https://example.com -expect "Welcome"

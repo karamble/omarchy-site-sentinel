@@ -11,7 +11,6 @@ import (
 
 var (
 	version = "dev"
-	commit  = "unknown"
 )
 
 const usage = `Site Sentinel watches sites, certificates and domain renewals.
@@ -110,7 +109,7 @@ func main() {
 	case "purge":
 		err = runPurge(args)
 	case "version", "-version", "--version":
-		fmt.Printf("%s (%s)\n", version, commit)
+		fmt.Println(version)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:
