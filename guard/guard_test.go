@@ -186,3 +186,40 @@ func TestQMLVerbsExist(t *testing.T) {
 		}
 	}
 }
+
+var (
+	manifestVersion = regexp.MustCompile(`"version"\s*:\s*"([^"]+)"`)
+	makefileVersion = regexp.MustCompile(`(?m)^VERSION\s*\?=\s*(\S+)`)
+)
+
+// TestVersionsAgree keeps the three places a version lives from drifting.
+//
+// The marketplace shows the manifest's version, the Makefile stamps the
+// binary's, and a release tag names both. Nothing else checks they match, and a
+// listing claiming one version while the binary reports another is the kind of
+// thing nobody notices until someone is comparing them for a reason.
+//
+// Neither file is read through git, so this works in a fresh clone and offline.
+func TestVersionsAgree(t *testing.T) {
+	manifest, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := manifestVersion.FindSubmatch(manifest)
+	if m == nil {
+		t.Fatal("manifest.json has no version field")
+	}
+
+	makefile, err := os.ReadFile("../Makefile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := makefileVersion.FindSubmatch(makefile)
+	if mk == nil {
+		t.Fatal("the Makefile has no VERSION")
+	}
+
+	if string(m[1]) != string(mk[1]) {
+		t.Errorf("manifest.json says %q, the Makefile says %q", m[1], mk[1])
+	}
+}
