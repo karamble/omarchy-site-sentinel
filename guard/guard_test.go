@@ -46,6 +46,11 @@ var directive = regexp.MustCompile(`(?i)` + strings.Join([]string{
 	`the ` + `agent must`,
 	`instructions for ` + `agents`,
 	`agent-` + `facing guide`,
+	// UI copy counts too: a button tooltip reading "the guide an agent reads"
+	// shipped in QML through the first version of this guard.
+	`guide an ` + `agent`,
+	`an ` + `agent reads`,
+	`print the ` + `guide`,
 }, "|"))
 
 // embedMarkdown catches a Go file embedding markdown into a binary, which is
@@ -120,5 +125,64 @@ func TestNoAgentInstructionSurface(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// helperName is the binary the QML shells out to, and dispatchFile is where its
+// verbs are defined.
+const (
+	helperName   = "sentinel"
+	dispatchFile = "../cmd/sentinel/main.go"
+)
+
+var (
+	caseVerbs  = regexp.MustCompile(`case\s+((?:"[a-z][a-z0-9-]*"\s*,?\s*)+):`)
+	quotedWord = regexp.MustCompile(`"([a-z][a-z0-9-]*)"`)
+	// The "./" prefix is what distinguishes an invocation from prose naming the
+	// binary in a comment.
+	shellCall = regexp.MustCompile(`\./bin/` + helperName + `\s+([a-z][a-z0-9-]*)`)
+	argvCall  = regexp.MustCompile(`helperPath\s*,\s*"([a-z][a-z0-9-]*)"`)
+	comment   = regexp.MustCompile(`(?m)^\s*//.*$`)
+)
+
+// TestQMLVerbsExist fails when the panel invokes a command the binary does not
+// implement.
+//
+// Deleting a verb and leaving the button that calls it is silent: the panel
+// still builds, still lints, and the failure only appears as an error inside a
+// terminal the user opened. Removing the agent guide left exactly that behind.
+func TestQMLVerbsExist(t *testing.T) {
+	src, err := os.ReadFile(dispatchFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]bool{}
+	for _, m := range caseVerbs.FindAllStringSubmatch(string(src), -1) {
+		for _, w := range quotedWord.FindAllStringSubmatch(m[1], -1) {
+			known[w[1]] = true
+		}
+	}
+	if len(known) == 0 {
+		t.Fatalf("%s: found no verbs, the dispatch pattern has drifted", dispatchFile)
+	}
+
+	entries, err := filepath.Glob("../*.qml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range entries {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := comment.ReplaceAllString(string(body), "")
+		for _, re := range []*regexp.Regexp{shellCall, argvCall} {
+			for _, m := range re.FindAllStringSubmatch(text, -1) {
+				if !known[m[1]] {
+					t.Errorf("%s: calls %q, which %s does not implement",
+						path, m[1], helperName)
+				}
+			}
+		}
 	}
 }

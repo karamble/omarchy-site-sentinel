@@ -187,17 +187,6 @@ Column {
         onClicked: if (panel) panel.showMCP()
       }
 
-      Button {
-        text: "Print the guide"
-        tooltipText: "Prints the guide an agent reads; installs nothing"
-        foreground: view.fg
-        accent: Color.accent
-        fontFamily: view.ff
-        fontSize: Style.font.caption
-        bordered: true
-        focusable: true
-        onClicked: if (panel) panel.showGuide()
-      }
 
       Button {
         text: "New token"

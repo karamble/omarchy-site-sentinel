@@ -256,10 +256,6 @@ Panel {
     root.runTerminal("cd " + root.pluginDir + " && ./bin/sentinel mcp")
   }
 
-  function showGuide() {
-    if (root.helperMissing) { root.runBuild(); return }
-    root.runTerminal("cd " + root.pluginDir + " && ./bin/sentinel skill | less")
-  }
 
   Component.onCompleted: refresh()
   onOpenedChanged: if (opened) refresh()
