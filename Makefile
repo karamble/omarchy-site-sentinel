@@ -4,8 +4,11 @@
 VERSION ?= 0.1.1
 LDFLAGS := -X main.version=$(VERSION)
 
-# Tools are named through variables so a packager can point them elsewhere.
-GO ?= go
+# Every tool is named through a variable, and the two that only ever do one
+# thing are named absolutely, so a build does not depend on what PATH resolves
+# them to. A packager can override any of them.
+GO      ?= go
+INSTALL ?= /usr/bin/install
 
 # Pin the compiler. Without this the go command will fetch a different
 # toolchain over the network to satisfy the directive in go.mod; with it the
@@ -36,7 +39,7 @@ PREVIEW := $(wildcard preview.png)
 all: build
 
 build: verify
-	@mkdir -p bin
+	@$(INSTALL) -d bin
 	@echo "building bin/sentinel"
 	@$(GO) build $(BUILDFLAGS) -ldflags "$(LDFLAGS)" -o bin/sentinel ./cmd/sentinel
 	@echo
@@ -49,10 +52,11 @@ test:
 
 # Omarchy refuses symlinks inside a plugin folder, so installing copies.
 install: build
-	@mkdir -p "$(PLUGIN_DIR)/bin"
-	@cp --remove-destination $(PLUGIN_FILES) $(PREVIEW) "$(PLUGIN_DIR)/"
-	@# --remove-destination unlinks first, so a running daemon does not block the copy
-	@cp --remove-destination bin/sentinel "$(PLUGIN_DIR)/bin/"
+	@$(INSTALL) -d "$(PLUGIN_DIR)/bin"
+	@$(INSTALL) -m 0644 $(PLUGIN_FILES) $(PREVIEW) "$(PLUGIN_DIR)/"
+	@# install writes through a fresh inode, so a running daemon holding the old
+	@# binary open does not block the replacement, which plain cp would.
+	@$(INSTALL) -m 0755 bin/sentinel "$(PLUGIN_DIR)/bin/"
 	@echo "installed to $(PLUGIN_DIR)"
 	@echo "enable it with: omarchy plugin enable karamble.sitesentinel right"
 

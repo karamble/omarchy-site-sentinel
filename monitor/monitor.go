@@ -68,9 +68,15 @@ func New(store func() *sites.Store, statePath string, logger *slog.Logger) *Moni
 		statePath: statePath,
 		state:     make(map[string]*SiteState),
 		round:     Round{Last: make(map[Tier]time.Time)},
+		// Proxy is nil on purpose, and spelled out rather than left implicit.
+		// http.DefaultTransport proxies according to HTTP_PROXY and friends,
+		// which would mean a site's reachability and certificate were read
+		// through whatever an environment variable named, rather than from the
+		// site. A monitor has to look at the thing it is monitoring.
 		client: &http.Client{
 			Timeout: 20 * time.Second,
 			Transport: &http.Transport{
+				Proxy:                 nil,
 				DialContext:           dialer.DialContext,
 				TLSHandshakeTimeout:   10 * time.Second,
 				ResponseHeaderTimeout: 15 * time.Second,
