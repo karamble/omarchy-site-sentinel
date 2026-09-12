@@ -176,7 +176,7 @@ Panel {
 
   function refresh() {
     if (!helperProbe.running) helperProbe.running = true
-    if (!staleProbe.running) staleProbe.running = true
+    if (!root.helperMissing && !staleProbe.running) staleProbe.running = true
     if (!fetchProc.running) fetchProc.running = true
     if (root.view === "alerts" && !alertsProc.running) alertsProc.running = true
   }
@@ -238,22 +238,39 @@ Panel {
   // Recycling shows the new entry once, in a terminal, so it can be copied.
   function recycleToken() {
     if (root.helperMissing) { root.runBuild(); return }
-    root.runTerminal("cd " + root.pluginDir + " && ./bin/sentinel recycle")
+    root.runHelper("recycle")
   }
 
-  // Detached, because a Process owned by this panel dies when the terminal
-  // takes the focus that closes the card.
+  // The launcher embeds what it is given in a bash -c string, so anything
+  // interpolated into a command has to be quoted for a shell. Single quotes
+  // with '\'' escaping is the only form with no exceptions.
+  function shellQuote(s) {
+    return "'" + String(s).replace(/'/g, "'\\''") + "'"
+  }
+
+  // Absolute, so the launcher is not resolved through whatever PATH the shell
+  // inherited. Detached, because a Process owned by this panel dies when the
+  // terminal takes the focus that closes the card.
+  readonly property string launcher:
+    "/usr/share/omarchy/bin/omarchy-launch-floating-terminal-with-presentation"
+
   function runTerminal(command) {
-    Quickshell.execDetached(["omarchy-launch-floating-terminal-with-presentation", command])
+    Quickshell.execDetached([root.launcher, command])
   }
 
+  // make -C rather than "cd X && make": no command separator in the string at
+  // all, and one quoted argument.
   function runBuild() {
-    root.runTerminal("cd " + root.pluginDir + " && make")
+    root.runTerminal("make -C " + root.shellQuote(root.pluginDir))
+  }
+
+  function runHelper(verb) {
+    root.runTerminal(root.shellQuote(root.helperPath) + " " + verb)
   }
 
   function showMCP() {
     if (root.helperMissing) { root.runBuild(); return }
-    root.runTerminal("cd " + root.pluginDir + " && ./bin/sentinel mcp")
+    root.runHelper("mcp")
   }
 
 
@@ -271,7 +288,7 @@ Panel {
   // evidence: a re-clone deletes bin/ while the daemon carries on.
   Process {
     id: helperProbe
-    command: ["test", "-x", root.helperPath]
+    command: ["/usr/bin/test", "-x", root.helperPath]
     onExited: function (code, status) {
       root.helperMissing = code !== 0
       if (root.helperMissing) root.snap = null
@@ -280,13 +297,15 @@ Panel {
 
   // Compares source against the built helper rather than asking git, so a
   // local edit reads the same as an update.
+  // One find, no shell and no pipe: stale means it printed a path. Skipped
+  // while the helper is missing, since there is nothing to be newer than.
   Process {
     id: staleProbe
-    command: ["sh", "-c",
-      "test -x '" + root.helperPath + "' || exit 0; " +
-      "find '" + root.pluginDir + "' -name '*.go' -newer '" + root.helperPath + "' -print -quit | grep -q ."]
-    onExited: function (code, status) {
-      root.helperStale = code === 0
+    running: false
+    command: ["/usr/bin/find", root.pluginDir, "-name", "*.go",
+              "-newer", root.helperPath, "-print", "-quit"]
+    stdout: StdioCollector {
+      onStreamFinished: root.helperStale = this.text.trim().length > 0
     }
   }
 
