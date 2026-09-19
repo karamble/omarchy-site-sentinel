@@ -337,3 +337,31 @@ func (m *Monitor) Forget(id string) {
 	m.mu.Unlock()
 	m.save()
 }
+
+// Prune drops the state of every site the store no longer has, reporting how
+// many went.
+//
+// load() restores the state file wholesale, so a record orphaned by an earlier
+// removal -- or by a crash between writing the store and forgetting the state
+// -- outlives every restart. Snapshot hides such a record, which makes pruning
+// the only way one can ever leave: hidden and undeletable is worse than
+// visible. Called at startup, where both files have just been read.
+//
+// One pass under one lock and a single save, rather than a Forget per id and a
+// file write each.
+func (m *Monitor) Prune(keep map[string]bool) int {
+	m.mu.Lock()
+	dropped := 0
+	for id := range m.state {
+		if !keep[id] {
+			delete(m.state, id)
+			dropped++
+		}
+	}
+	m.mu.Unlock()
+
+	if dropped > 0 {
+		m.save()
+	}
+	return dropped
+}

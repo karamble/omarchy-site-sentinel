@@ -47,8 +47,13 @@ build: verify
 	@echo "  ./bin/sentinel add https://example.com"
 	@echo "  ./bin/sentinel status"
 
+# CGO_ENABLED is pinned off above so the shipped binary is reproducible, but the
+# race detector is built on cgo and refuses to run without it. Turning it back
+# on for this one target keeps both: a reproducible build and a suite that can
+# actually be raced. Without the override this target only ever printed
+# "-race requires cgo".
 test:
-	$(GO) test -race ./...
+	CGO_ENABLED=1 $(GO) test -race ./...
 
 # Omarchy refuses symlinks inside a plugin folder, so installing copies.
 install: build

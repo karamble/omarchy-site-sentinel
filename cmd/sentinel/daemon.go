@@ -72,6 +72,19 @@ func runDaemon(args []string) error {
 	mon := monitor.New(srv.Store, filepath.Join(dir, "state.json"), logger)
 	srv.SetMonitor(mon)
 
+	// Both files have just been read, so this is the moment to reconcile them.
+	// State for a site the store no longer lists is an orphan: it cannot be
+	// probed, it cannot be removed, and until Snapshot started hiding it, it
+	// was reported as a paused site stuck at whatever it last was. Quiet when
+	// there is nothing to drop.
+	keep := make(map[string]bool, len(store.Sites))
+	for _, site := range store.Sites {
+		keep[site.ID] = true
+	}
+	if dropped := mon.Prune(keep); dropped > 0 {
+		logger.Info("dropped state for sites no longer watched", "sites", dropped)
+	}
+
 	// Triggers are stored separately from sites.
 	triggers, err := alerts.Load(filepath.Join(dir, "triggers.json"))
 	if err != nil {

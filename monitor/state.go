@@ -301,7 +301,29 @@ type Snapshot struct {
 }
 
 // Snapshot copies the current state out from under the lock.
+//
+// State for a site the store no longer has is left out. This is the one place
+// worth doing that: the dashboard, every MCP site tool, health and the alert
+// engine all read this snapshot, so filtering here fixes each of them at once
+// and no later consumer can reintroduce the leak by looping over state and
+// looking the site up only for its enabled flag -- which is how a removed
+// site went on being listed as paused, and urgent, indefinitely.
+//
+// The store is read before the lock is taken, because m.store() reaches the
+// server's own RLock and the two should not nest. A Monitor built without a
+// store closure emits everything rather than nothing, which is the same
+// choice the MCP row builder makes for a nil site list.
 func (m *Monitor) Snapshot() Snapshot {
+	var known map[string]bool
+	if m.store != nil {
+		if st := m.store(); st != nil {
+			known = make(map[string]bool, len(st.Sites))
+			for _, site := range st.Sites {
+				known[site.ID] = true
+			}
+		}
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -315,7 +337,10 @@ func (m *Monitor) Snapshot() Snapshot {
 	for k, v := range m.round.Last {
 		out.Last[k] = v
 	}
-	for _, s := range m.state {
+	for id, s := range m.state {
+		if known != nil && !known[id] {
+			continue
+		}
 		out.Sites = append(out.Sites, *s)
 	}
 	sort.Slice(out.Sites, func(i, j int) bool {
@@ -332,13 +357,37 @@ type persisted struct {
 }
 
 // save writes state atomically. A failure is logged, not propagated.
+//
+// State for a site the store no longer has is not written. Forgetting a
+// removed site is not enough on its own: a round already in flight holds the
+// site list from when it started, so it goes on to probe a site removed since,
+// ensure() puts the record back, and the next save would commit it to disk as
+// an orphan. Filtering here is what makes the removal stick whichever path
+// created the record -- and it costs one map build on a write that already
+// copies the whole state.
 func (m *Monitor) save() {
 	if m.statePath == "" {
 		return
 	}
+
+	// Before the lock: m.store() reaches the server's own lock and the two
+	// should not nest. A monitor without a store filters nothing.
+	var known map[string]bool
+	if m.store != nil {
+		if st := m.store(); st != nil {
+			known = make(map[string]bool, len(st.Sites))
+			for _, site := range st.Sites {
+				known[site.ID] = true
+			}
+		}
+	}
+
 	m.mu.RLock()
 	doc := persisted{Version: 1, Sites: make(map[string]*SiteState, len(m.state)), Round: m.round}
 	for k, v := range m.state {
+		if known != nil && !known[k] {
+			continue
+		}
 		dup := *v
 		doc.Sites[k] = &dup
 	}

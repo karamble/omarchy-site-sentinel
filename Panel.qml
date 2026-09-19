@@ -98,6 +98,23 @@ Panel {
   property string lastError: ""
   property string actionError: ""
 
+  // A refresh asks the daemon to probe every site, which takes seconds, while
+  // the request itself returns at once. Reading the status straight afterwards
+  // therefore returned the data from before the round, and nothing appeared to
+  // happen until the poll timer next landed. checking holds the button in a
+  // waiting state while lastChecked is watched for the round arriving.
+  property bool checking: false
+  property string checkingFrom: ""
+  property int checkingTries: 0
+
+  // fetchProc cannot be started while it is already running, and dropping the
+  // request meant a fetch asked for right after a change was simply lost -- a
+  // deleted row then sat there until the next poll. Remember the ask instead.
+  property bool fetchQueued: false
+
+  // The site a remove was asked for, cleared as soon as the answer is in.
+  property string pendingRemoval: ""
+
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -185,7 +202,13 @@ Panel {
   function refresh() {
     if (!helperProbe.running) helperProbe.running = true
     if (!root.helperMissing && !staleProbe.running) staleProbe.running = true
-    if (!fetchProc.running) fetchProc.running = true
+    if (fetchProc.running) {
+      // Queued rather than discarded: whatever prompted this wants data from
+      // after it happened, and the fetch in flight was started before.
+      root.fetchQueued = true
+    } else {
+      fetchProc.running = true
+    }
     if (root.view === "alerts" && !alertsProc.running) alertsProc.running = true
   }
 
@@ -195,8 +218,26 @@ Panel {
       root.refresh()
       return
     }
+    // Remember where the round counter stood, so the reply can be recognised
+    // when it arrives rather than guessed at by waiting a fixed time.
+    root.checkingFrom = root.lastChecked()
+    root.checkingTries = 0
+    root.checking = true
+    root.actionError = ""
     controlProc.args = ["refresh"]
     controlProc.running = true
+  }
+
+  // The daemon's own timestamp for the last completed round.
+  function lastChecked() {
+    return root.snap && root.snap.status && root.snap.status.lastChecked
+      ? String(root.snap.status.lastChecked) : ""
+  }
+
+  function stopChecking() {
+    root.checking = false
+    root.checkingFrom = ""
+    root.checkingTries = 0
   }
 
   function setView(name) {
@@ -213,7 +254,12 @@ Panel {
   }
 
   function control(args) {
-    if (controlProc.running) return
+    if (controlProc.running) {
+      // Silently doing nothing is the worst of the options: the click looked
+      // like it worked. Say so instead, and let the caller try again.
+      root.actionError = "still working on the last command, try again in a moment"
+      return
+    }
     root.actionError = ""
     controlProc.args = args
     controlProc.running = true
@@ -227,7 +273,31 @@ Panel {
   }
 
   function setSiteEnabled(id, on) { root.control([on ? "resume" : "pause", id]) }
-  function removeSite(id) { root.control(["remove", id, "-yes"]) }
+
+  // The id is remembered so the row can go as soon as the daemon confirms the
+  // removal, rather than at whatever point the next status arrives. Not before
+  // it confirms: a row that vanishes on a failed delete is how a site removed
+  // from the store but left in the monitor's state went unnoticed.
+  function removeSite(id) {
+    root.pendingRemoval = id
+    root.control(["remove", id, "-yes"])
+  }
+
+  // Drop one row from the snapshot in place. snap is reassigned rather than
+  // edited, because rows is bound to it and only a new value re-fires the
+  // binding -- which also runs clampCursor and takes the row out of the
+  // dashboard's copy of the same list.
+  function dropRow(id) {
+    if (!id || !root.snap || !root.snap.rows) return
+    var s = root.snap
+    var kept = []
+    for (var i = 0; i < s.rows.length; i++) {
+      if (s.rows[i].id !== id) kept.push(s.rows[i])
+    }
+    if (kept.length === s.rows.length) return
+    s.rows = kept
+    root.snap = s
+  }
   function disarm(id) { root.control(["disarm", id]) }
 
   function toggleMonitoring() {
@@ -338,6 +408,25 @@ Panel {
     onTriggered: root.refresh()
   }
 
+  // While a requested round is running, read the status back often enough to
+  // notice it finish. The daemon answers the request immediately and probes
+  // afterwards, so without this the panel showed pre-refresh data and the
+  // button looked inert until the poll above happened to land late enough.
+  // Capped so a round that never reports cannot leave the button waiting.
+  Timer {
+    interval: 2000
+    running: root.checking
+    repeat: true
+    onTriggered: {
+      root.checkingTries += 1
+      if (root.checkingTries > 22) {
+        root.stopChecking()
+        return
+      }
+      root.refresh()
+    }
+  }
+
   // Ask the filesystem whether the helper exists. A running daemon is not
   // evidence: a re-clone deletes bin/ while the daemon carries on.
   Process {
@@ -375,6 +464,12 @@ Panel {
 
     onExited: function (code, status) {
       if (code !== 0 && !root.snap) root.helperMissing = true
+      // Something asked for a fetch while this one was in flight, and it
+      // wanted the state after whatever it had just done.
+      if (root.fetchQueued) {
+        root.fetchQueued = false
+        fetchProc.running = true
+      }
     }
 
     stdout: StdioCollector {
@@ -386,6 +481,9 @@ Panel {
           root.snap = JSON.parse(raw)
           root.helperMissing = false
           root.lastError = ""
+          // The round the refresh button asked for has landed once the
+          // daemon's own timestamp moves on from what it was.
+          if (root.checking && root.lastChecked() !== root.checkingFrom) root.stopChecking()
         } catch (e) {
           root.lastError = "unreadable helper output"
         }
@@ -407,7 +505,17 @@ Panel {
     environment: root.childEnv
     property var args: []
     command: [root.helperPath].concat(controlProc.args).concat(["-addr", root.addr])
-    onExited: root.refresh()
+
+    onExited: function (code, status) {
+      // A clean exit is the daemon's confirmation: the CLI turns a
+      // removed:false answer into a non-zero exit and a message on stderr.
+      if (root.pendingRemoval !== "") {
+        if (code === 0) root.dropRow(root.pendingRemoval)
+        root.pendingRemoval = ""
+      }
+      if (code !== 0) root.stopChecking()
+      root.refresh()
+    }
 
     stderr: StdioCollector {
       waitForEnd: true
@@ -643,8 +751,12 @@ Panel {
               spacing: Style.space(6)
 
               Button {
-                text: "Refresh"
-                tooltipText: "Check every site now  (r)"
+                // Says what it is doing while it does it. The round takes
+                // seconds and used to give no sign of running at all.
+                text: root.checking ? "Checking" : "Refresh"
+                tooltipText: root.checking
+                  ? "Checking every site now, this takes a moment"
+                  : "Check every site now  (r)"
                 iconText: root.iconRefresh
                 foreground: root.foreground
                 accent: Color.accent

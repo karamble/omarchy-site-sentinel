@@ -49,6 +49,32 @@ func (s *Server) Store() *sites.Store {
 	return s.store
 }
 
+// Reload re-reads the store from disk, reporting whether it changed hands.
+//
+// The store was read once at startup, so an edit made to sites.json by hand or
+// by another process stayed invisible until the daemon restarted -- including
+// to the refresh button, which re-probed the list it already had.
+//
+// Three things here are deliberate. The read happens outside the lock, because
+// holding the write lock across file I/O stalls every request, the token check
+// among them. The pointer is swapped rather than the struct mutated, because
+// Store() hands the pointer out and its callers read the slice after the read
+// lock is released -- mutating in place would be a data race. And a failed read
+// keeps the store we have: a reload must never be able to empty the site list,
+// least of all from a transient miss while the file is being replaced.
+func (s *Server) Reload() bool {
+	fresh, err := sites.Load(s.Store().Path())
+	if err != nil {
+		s.logger.Warn("keeping the loaded store", "err", err)
+		return false
+	}
+
+	s.mu.Lock()
+	s.store = fresh
+	s.mu.Unlock()
+	return true
+}
+
 // SetMonitor attaches the monitor. Construction is circular: the monitor reads
 // configuration through the server, so build the server first.
 func (s *Server) SetMonitor(m *monitor.Monitor) {
@@ -102,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 		State:      s.Snapshot,
 		Sites:      s.siteList,
 		Mutate:     s.mutate,
+		Forget:     func(id string) { s.mon.Forget(id) },
 		Monitoring: func() bool { return s.Store().MonitoringOn() },
 		Alerts:     s.alertEngine,
 	}, s.version)
@@ -460,6 +487,12 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	// Re-read the store first, so "check every site now" means the sites as
+	// they are on disk rather than as they were when the daemon started. The
+	// monitor holds Store as a method value, so the swap is visible to the
+	// rounds below without rewiring. Before the goroutine, and outside any
+	// lock: Refresh reaches back through Store() for the site list.
+	s.Reload()
 	go s.mon.Refresh(context.Background())
 	writeJSON(w, s.logger, http.StatusOK, map[string]string{"status": "refreshing"})
 }

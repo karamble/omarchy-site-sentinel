@@ -24,6 +24,12 @@ type Source struct {
 	Sites func() []sites.Site
 	// Mutate applies a change to the store and persists it.
 	Mutate func(func(*sites.Store) error) error
+	// Forget drops a removed site's monitor state. Mutate's counterpart:
+	// taking a site out of the store is half of forgetting it, and without
+	// this the record left in state.json is an orphan no code path can reach
+	// -- the listing still shows it, and removing it again finds nothing in
+	// the store to remove.
+	Forget func(string)
 	// Monitoring reports the master switch.
 	Monitoring func() bool
 	// Alerts resolves the trigger engine per call, because the handler is built
@@ -129,16 +135,31 @@ func rows(src Source) []siteRow {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	// known is separate from enabled on purpose. A site the store has but has
+	// switched off is known and disabled; a site the store does not have at all
+	// is neither, and reading it out of enabled alone gave it the same answer as
+	// a paused site -- which is how a removed site went on being listed.
+	//
+	// Monitor.Snapshot already drops unmatched state, so in the daemon this is
+	// the second of two guards. It is worth having because resolve() reads these
+	// rows to turn a caller's argument into an id, and that feeds remove and
+	// edit: a write path should not be safe only because its caller filtered.
 	enabled := map[string]bool{}
-	if src.Sites != nil {
+	known := map[string]bool{}
+	filter := src.Sites != nil
+	if filter {
 		for _, s := range src.Sites() {
 			enabled[s.ID] = s.Enabled
+			known[s.ID] = true
 		}
 	}
 
 	out := make([]siteRow, 0, len(snap.State.Sites))
 	for i := range snap.State.Sites {
 		st := &snap.State.Sites[i]
+		if filter && !known[st.ID] {
+			continue
+		}
 		row := siteRow{
 			ID:       st.ID,
 			Site:     st.Label,
@@ -384,6 +405,13 @@ func register(s *mcp.Server, src Source) {
 		})
 		if err != nil {
 			return nil, disarmOut{Status: src.status(), ID: id}, err
+		}
+		// After Mutate returns, not inside it: the store write holds the
+		// server's lock, and this is the ordering the HTTP handler already
+		// uses. Guarded like the alert engine, so a Source built without a
+		// Forget still works.
+		if removed && src.Forget != nil {
+			src.Forget(id)
 		}
 		return nil, disarmOut{Status: src.status(), Removed: removed, ID: id}, nil
 	})
