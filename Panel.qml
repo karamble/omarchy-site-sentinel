@@ -444,12 +444,16 @@ Panel {
   // local edit reads the same as an update.
   // One find, no shell and no pipe: stale means it printed a path. Skipped
   // while the helper is missing, since there is nothing to be newer than.
+  // Test files are left out: they never reach the binary. The module files
+  // are counted: a dependency change does.
   Process {
     id: staleProbe
     clearEnvironment: true
     environment: root.childEnv
     running: false
-    command: ["/usr/bin/find", root.pluginDir, "-name", "*.go",
+    command: ["/usr/bin/find", root.pluginDir,
+              "(", "-name", "*.go", "-not", "-name", "*_test.go",
+              "-o", "-name", "go.mod", "-o", "-name", "go.sum", ")",
               "-newer", root.helperPath, "-print", "-quit"]
     stdout: StdioCollector {
       onStreamFinished: root.helperStale = this.text.trim().length > 0
