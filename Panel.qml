@@ -336,10 +336,24 @@ Panel {
     Quickshell.execDetached([root.launcher, command])
   }
 
+  // The shell owns the daemon, so a fresh binary on disk changes nothing until
+  // the shell starts it. Absolute for the same reason the launcher is.
+  readonly property string restarter:
+    "/usr/share/omarchy/bin/omarchy-restart-shell"
+
   // make -C rather than "cd X && make": no command separator in the string at
   // all, and one quoted argument.
   function runBuild() {
     root.runTerminal("make -C " + root.shellQuote(root.pluginDir))
+  }
+
+  // A stale helper is not a missing one. With nothing built the reprobe timer
+  // starts the daemon on its own, but here the old daemon is already running
+  // and the old views are loaded, so compiling alone changes nothing on
+  // screen. Restart the shell after the build.
+  function runRebuild() {
+    root.runTerminal("make -C " + root.shellQuote(root.pluginDir) +
+                     " && " + root.shellQuote(root.restarter))
   }
 
   function runHelper(verb) {
@@ -915,7 +929,7 @@ Panel {
                 id: rebuildButton
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Rebuild"
-                tooltipText: "Runs make in the plugin directory"
+                tooltipText: "Runs make in the plugin directory, then restarts the shell"
                 iconText: root.iconRefresh
                 foreground: root.foreground
                 accent: Color.accent
@@ -923,7 +937,7 @@ Panel {
                 fontSize: Style.font.caption
                 bordered: true
                 focusable: true
-                onClicked: root.runBuild()
+                onClicked: root.runRebuild()
               }
             }
           }
