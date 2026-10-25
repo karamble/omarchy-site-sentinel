@@ -54,7 +54,7 @@ func HTTP(ctx context.Context, client *http.Client, url, expect string) Reach {
 	if err != nil {
 		return Reach{Chain: chain, Err: err}
 	}
-	req.Header.Set("User-Agent", "site-sentinel/1 (+monitoring)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36")
 
 	start := time.Now()
 	resp, err := c.Do(req)
